@@ -217,12 +217,31 @@
 
     /* ---------- texture helper ---------- */
     const loader = new THREE.TextureLoader();
+    // Carica l'immagine e la riduce a max 1024 px: su iPhone le immagini troppo grandi
+    // non vengono disegnate in 3D (limite di memoria di WebKit), senza dare errori.
+    const MAX_TEX = 1024;
     function loadOne(url) {
-      return new Promise((res, rej) => loader.load(url, (t) => {
-        t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = 4;
-        res(t);
-      }, undefined, rej));
+      return new Promise((res, rej) => {
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => {
+          try {
+            const k = Math.min(1, MAX_TEX / Math.max(img.naturalWidth, img.naturalHeight));
+            const w = Math.max(1, Math.round(img.naturalWidth * k));
+            const h = Math.max(1, Math.round(img.naturalHeight * k));
+            const c = document.createElement('canvas');
+            c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0, w, h);
+            const t = new THREE.CanvasTexture(c);
+            t.colorSpace = THREE.SRGBColorSpace;
+            t.generateMipmaps = false;
+            t.minFilter = THREE.LinearFilter;
+            res(t);
+          } catch (e) { rej(e); }
+        };
+        img.onerror = rej;
+        img.src = url + (url.includes('?') ? '&' : '?') + 'v=' + Date.now(); // evita versioni vecchie in cache
+      });
     }
     // prova il file accanto a index.html, poi dentro la cartella assets/
     async function loadTexture(names) {
@@ -292,7 +311,7 @@
           let tex;
           try { tex = await loadTexture(it.img); }
           catch (e) { missingFiles.push([].concat(it.img)[0]); continue; } // immagine mancante: si salta, la pagina parte lo stesso
-          const h = it.w * (tex.image.height / tex.image.width);
+          const h = it.w * (tex.image.height / tex.image.width); // tex.image = canvas ridotto
           const group = new THREE.Group();
 
           if (it.glow) {
@@ -441,7 +460,7 @@
         mindarThree.renderer.setAnimationLoop(animate);
         loadingEl.classList.add('hidden');
         $('ar-container').addEventListener('click', onTap, { passive: false });
-        if (missingFiles.length) showMessage('Immagini non trovate: ' + missingFiles.join(', '), 10000);
+        if (missingFiles.length) showMessage('Immagini non trovate: ' + missingFiles.join(', '), 0);
         else if (inAppBrowser) showMessage(`Per un'esperienza migliore apri la pagina in ${isIOS ? 'Safari' : 'Chrome'}.`, 6000);
       } catch (err) {
         clearTimeout(watchdog);
